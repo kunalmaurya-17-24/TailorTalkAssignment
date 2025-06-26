@@ -35,11 +35,12 @@ if prompt := st.chat_input("What would you like to do?"):
 
     with st.spinner("🤖 Thinking..."):
         try:
-            response = requests.post(
-                "https://tailor-talk-fastapi.onrender.com/chat",  # ✅ Update this to your real FastAPI endpoint if hosted
-                json={"message": prompt},
-                timeout=60
-            )
+response = requests.post(
+    "https://tailortalkassignment.onrender.com/chat",  # ✅ must point to backend API
+    json={"message": prompt},
+    timeout=60
+)
+
             response.raise_for_status()
             reply = response.json()["response"]
         except Exception as e:
