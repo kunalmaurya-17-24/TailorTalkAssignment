@@ -89,7 +89,11 @@ def detect_intent(state: AgentState):
 
     if dt_str:
         try:
-            new_state.date_time = datetime.fromisoformat(dt_str).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
+            dt_obj = datetime.fromisoformat(dt_str)
+            now_ist = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
+            if dt_obj.year < now_ist.year:
+                dt_obj = dt_obj.replace(year=now_ist.year)
+            new_state.date_time = dt_obj.replace(tzinfo=ZoneInfo("Asia/Kolkata"))
         except Exception:
             pass
     elif "tomorrow afternoon" in user_input.lower():
@@ -175,12 +179,11 @@ def book_slot(state: AgentState):
             body=event,
             conferenceDataVersion=1
         ).execute()
-        print("✅ Event created:", created)  # <-- log everything
         meet_link = created.get("hangoutLink", "")
+        print("✅ Event created:", created)
         new_state.booking_status = f"Booked. Meet link: {meet_link}"
-    except Exception as e:
-        print("❌ Error while creating event:", e)
-        new_state.booking_status = f"❌ Failed: {e}"
+    except HttpError as e:
+        new_state.booking_status = f"Failed: {e}"
     return new_state
 
 def send_confirmation(state: AgentState):
@@ -220,7 +223,6 @@ def run_agent(message: str):
         initial_state = AgentState(messages=[message])
         final_state = agent.invoke(initial_state)
 
-        # Return last message as reply
         if hasattr(final_state, "messages"):
             return final_state.messages[-1]
         elif isinstance(final_state, dict):
