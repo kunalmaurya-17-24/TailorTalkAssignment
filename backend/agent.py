@@ -55,18 +55,12 @@ def call_hf(prompt: str) -> str:
             max_tokens=300,
             temperature=0.3
         )
-
-        if not response or not hasattr(response, "choices") or not response.choices:
-            print("❌ HF API returned empty or invalid response:", response)
-            return ""
-
         return response.choices[0].message.content
-
     except Exception as e:
         print("❌ HF API error:", e)
         return ""
 
-
+# ✅ Render-safe credentials loader
 def get_calendar_service():
     try:
         creds = Credentials.from_authorized_user_file("token.json")
@@ -181,10 +175,12 @@ def book_slot(state: AgentState):
             body=event,
             conferenceDataVersion=1
         ).execute()
+        print("✅ Event created:", created)  # <-- log everything
         meet_link = created.get("hangoutLink", "")
         new_state.booking_status = f"Booked. Meet link: {meet_link}"
-    except HttpError as e:
-        new_state.booking_status = f"Failed: {e}"
+    except Exception as e:
+        print("❌ Error while creating event:", e)
+        new_state.booking_status = f"❌ Failed: {e}"
     return new_state
 
 def send_confirmation(state: AgentState):
@@ -224,6 +220,7 @@ def run_agent(message: str):
         initial_state = AgentState(messages=[message])
         final_state = agent.invoke(initial_state)
 
+        # Return last message as reply
         if hasattr(final_state, "messages"):
             return final_state.messages[-1]
         elif isinstance(final_state, dict):
