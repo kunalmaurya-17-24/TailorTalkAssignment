@@ -60,7 +60,6 @@ def call_hf(prompt: str) -> str:
         print("❌ HF API error:", e)
         return ""
 
-# ✅ Render-safe credentials loader
 def get_calendar_service():
     try:
         creds = Credentials.from_authorized_user_file("token.json")
@@ -93,10 +92,9 @@ def detect_intent(state: AgentState):
         except Exception:
             pass
     elif "tomorrow afternoon" in user_input.lower():
-    now_ist = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
-    new_state.date_time = (now_ist + timedelta(days=1)).replace(hour=14, minute=0, second=0, microsecond=0)
-    new_state.intent = "book_slot"
-
+        now_ist = datetime.now(tz=ZoneInfo("Asia/Kolkata"))
+        new_state.date_time = (now_ist + timedelta(days=1)).replace(hour=14, minute=0, second=0, microsecond=0)
+        new_state.intent = "book_slot"
 
     new_state.duration = parsed.get("duration", 30)
     return new_state
@@ -219,7 +217,6 @@ def run_agent(message: str):
         initial_state = AgentState(messages=[message])
         final_state = agent.invoke(initial_state)
 
-        # Return last message as reply
         if hasattr(final_state, "messages"):
             return final_state.messages[-1]
         elif isinstance(final_state, dict):
