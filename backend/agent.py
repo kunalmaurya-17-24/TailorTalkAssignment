@@ -55,10 +55,17 @@ def call_hf(prompt: str) -> str:
             max_tokens=300,
             temperature=0.3
         )
+
+        if not response or not hasattr(response, "choices") or not response.choices:
+            print("❌ HF API returned empty or invalid response:", response)
+            return ""
+
         return response.choices[0].message.content
+
     except Exception as e:
         print("❌ HF API error:", e)
         return ""
+
 
 def get_calendar_service():
     try:
