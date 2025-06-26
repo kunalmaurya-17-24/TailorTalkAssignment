@@ -1,4 +1,3 @@
-### backend/agent.py
 import json
 import copy
 import os
@@ -10,14 +9,15 @@ from langgraph.graph import StateGraph, END
 from huggingface_hub import InferenceClient
 from dotenv import load_dotenv
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
+# Load secrets from .env
 load_dotenv()
 CALENDAR_ID = os.getenv("CALENDAR_ID")
 HF_TOKEN = os.getenv("HF_TOKEN")
 
+# Initialize HF client
 client = InferenceClient(
     model="HuggingFaceH4/zephyr-7b-beta",
     token=HF_TOKEN
@@ -60,17 +60,14 @@ def call_hf(prompt: str) -> str:
         print("❌ HF API error:", e)
         return ""
 
+# ✅ Render-safe credentials loader
 def get_calendar_service():
-    creds = None
-    if os.path.exists("token.json"):
+    try:
         creds = Credentials.from_authorized_user_file("token.json")
-    if not creds or not creds.valid:
-        flow = InstalledAppFlow.from_client_secrets_file(
-            "credentials.json", ["https://www.googleapis.com/auth/calendar"])
-        creds = flow.run_local_server(port=0)
-        with open("token.json", "w") as token:
-            token.write(creds.to_json())
-    return build("calendar", "v3", credentials=creds)
+        return build("calendar", "v3", credentials=creds)
+    except Exception as e:
+        print("❌ Failed to load calendar credentials:", e)
+        return None
 
 def detect_intent(state: AgentState):
     user_input = state.messages[-1].strip()
@@ -89,13 +86,14 @@ def detect_intent(state: AgentState):
     new_state = copy.deepcopy(state)
     new_state.intent = parsed.get("intent", "suggest_slots")
     dt_str = parsed.get("date_time")
+
     if dt_str:
         try:
             new_state.date_time = datetime.fromisoformat(dt_str).replace(tzinfo=ZoneInfo("Asia/Kolkata"))
         except Exception:
             pass
     elif "tomorrow afternoon" in user_input.lower():
-        new_state.date_time = (datetime.now(tz=ZoneInfo("Asia/Kolkata")) + timedelta(days=1)).replace(hour=12, minute=0)
+        new_state.date_time = (datetime.now(tz=ZoneInfo("Asia/Kolkata")) + timedelta(days=1)).replace(hour=14, minute=0)
         new_state.intent = "book_slot"
 
     new_state.duration = parsed.get("duration", 30)
@@ -109,8 +107,12 @@ def check_availability(state: AgentState):
 
     try:
         service = get_calendar_service()
+        if not service:
+            raise Exception("Google Calendar service not initialized")
+
         start = state.date_time.isoformat()
         end = (state.date_time + timedelta(minutes=state.duration)).isoformat()
+
         events = service.events().list(
             calendarId=CALENDAR_ID,
             timeMin=start,
@@ -138,13 +140,20 @@ def check_availability(state: AgentState):
                     new_state.suggested_time = suggested
                     break
                 suggested += timedelta(minutes=30)
+
     except HttpError as e:
         new_state.availability = [f"Error checking availability: {e}"]
+    except Exception as e:
+        new_state.availability = [f"Internal error: {e}"]
+
     return new_state
 
 def book_slot(state: AgentState):
     new_state = copy.deepcopy(state)
     service = get_calendar_service()
+    if not service:
+        new_state.booking_status = "❌ Google Calendar credentials error"
+        return new_state
 
     event = {
         "summary": "TailorTalk Call",
@@ -175,7 +184,9 @@ def send_confirmation(state: AgentState):
     new_state = copy.deepcopy(state)
     if state.booking_status and "Booked" in state.booking_status:
         when = state.date_time.strftime("%A, %B %d at %I:%M %p IST")
-        new_state.messages.append(f"✅ Your call is scheduled on {when} for {state.duration} minutes.\n{state.booking_status}")
+        new_state.messages.append(
+            f"✅ Your call is scheduled on {when} for {state.duration} minutes.\n{state.booking_status}"
+        )
     else:
         msg = f"❌ Booking failed: {state.booking_status}"
         if state.suggested_time:
@@ -183,22 +194,30 @@ def send_confirmation(state: AgentState):
         new_state.messages.append(msg)
     return new_state
 
+# LangGraph pipeline
 workflow = StateGraph(AgentState)
 workflow.add_node("detect_intent", detect_intent)
 workflow.add_node("check_availability", check_availability)
 workflow.add_node("book_slot", book_slot)
 workflow.add_node("send_confirmation", send_confirmation)
+
 workflow.set_entry_point("detect_intent")
 workflow.add_edge("detect_intent", "check_availability")
-workflow.add_conditional_edges("check_availability", lambda s: "book_slot" if s.availability and "Available" in s.availability else "send_confirmation")
+workflow.add_conditional_edges(
+    "check_availability",
+    lambda s: "book_slot" if s.availability and "Available" in s.availability else "send_confirmation"
+)
 workflow.add_edge("book_slot", "send_confirmation")
 workflow.add_edge("send_confirmation", END)
+
 agent = workflow.compile()
 
 def run_agent(message: str):
     try:
         initial_state = AgentState(messages=[message])
         final_state = agent.invoke(initial_state)
+
+        # Return last message as reply
         if hasattr(final_state, "messages"):
             return final_state.messages[-1]
         elif isinstance(final_state, dict):
