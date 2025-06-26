@@ -1,8 +1,9 @@
+### backend/requirements.txt
 fastapi
 uvicorn
+langgraph
+huggingface_hub
 python-dotenv
 google-auth
 google-auth-oauthlib
 google-api-python-client
-huggingface_hub
-langgraph
