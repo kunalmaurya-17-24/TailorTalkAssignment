@@ -1,20 +1,21 @@
+# backend/main.py
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from agent import run_agent
+from agent import run_agent  # assuming agent.py is in same backend folder
 
 app = FastAPI()
 
+# Allow frontend to call backend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 @app.post("/chat")
-async def chat(req: Request):
-    data = await req.json()
-    message = data.get("message", "")
-    reply = run_agent(message)
-    return {"response": reply}
+async def chat(request: Request):
+    body = await request.json()
+    message = body.get("message", "")
+    response = run_agent(message)
+    return {"response": response}
