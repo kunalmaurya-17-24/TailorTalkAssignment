@@ -1,21 +1,20 @@
 import streamlit as st
 import json
-import os
 import re
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from huggingface_hub import InferenceClient
-from dotenv import load_dotenv
-from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+from google.oauth2.credentials import Credentials
 
-# Load .env or secrets
-load_dotenv()
-CALENDAR_ID = os.getenv("CALENDAR_ID", st.secrets.get("CALENDAR_ID"))
-HF_TOKEN = os.getenv("HF_TOKEN", st.secrets.get("HF_TOKEN"))
+# Load secrets
+CALENDAR_ID = st.secrets["CALENDAR_ID"]
+HF_TOKEN = st.secrets["HF_TOKEN"]
+GOOGLE_CREDS = json.loads(st.secrets["google"]["credentials"])
 
+# Setup Hugging Face model
 client = InferenceClient(
     model="HuggingFaceH4/zephyr-7b-beta",
     token=HF_TOKEN
@@ -50,17 +49,10 @@ def call_hf(prompt: str) -> str:
         return ""
 
 def get_calendar_service():
-    creds = None
-    if os.path.exists("token.json"):
-        creds = Credentials.from_authorized_user_file("token.json")
-    if not creds or not creds.valid:
-        flow = InstalledAppFlow.from_client_secrets_file(
-            "app/credentials.json",
-            scopes=["https://www.googleapis.com/auth/calendar"]
-        )
-        creds = flow.run_local_server(port=0)
-        with open("token.json", "w") as token:
-            token.write(creds.to_json())
+    creds = InstalledAppFlow.from_client_config(
+        GOOGLE_CREDS,
+        scopes=["https://www.googleapis.com/auth/calendar"]
+    ).run_local_server(port=0)
     return build("calendar", "v3", credentials=creds)
 
 def parse_user_input(user_input):
@@ -130,7 +122,7 @@ def book_slot(date_time, duration):
     except HttpError as e:
         return None, f"❌ Booking failed: {e}"
 
-# Streamlit Chat UI
+# 🟩 Streamlit UI
 st.set_page_config(page_title="TailorTalk", page_icon="🧵")
 st.title("🧵 TailorTalk Booking Agent")
 
@@ -151,7 +143,7 @@ if user_input := st.chat_input("What would you like to do?"):
         if result["intent"] == "book_slot" and result["date_time"]:
             reply, error = book_slot(result["date_time"], result["duration"])
         else:
-            reply = "🤔 Please provide a clear date/time to book."
+            reply = "🤔 Please provide a valid date and time to book."
             error = None
 
     if error:
